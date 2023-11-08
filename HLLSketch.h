@@ -3,6 +3,7 @@
 #include <array>
 #include <cmath>
 #include <cstring>
+#include <sdsl/wavelet_trees.hpp>
 
 #include "MurmurHash3.h"
 
@@ -12,10 +13,59 @@ constexpr double alpha_A = 0.7213 / (1 + 1.079 / m);
 
 template<typename t_wt>
 class CompressedHLLSketch{
+private:
+	uint64_t get_zero_count(){
+		uint64_t count = 0;
+
+		for(int i = 0; i < wt.size(); i++){
+			if(wt[i] == 0){
+				count++;
+			}
+		}
+		std::cout << "crash!" << std::endl;
+
+		return count;
+	}
 public:
 	t_wt wt;
 
-	CompressedHLLSketch(std::array<uint64_t, m> M){
+	CompressedHLLSketch(std::array<uint64_t, m> &M){
+		sdsl::construct_im(wt, M, 8);
+	}
+
+	size_t size(){
+		return size_in_bytes(wt);
+	}
+
+	void merge(CompressedHLLSketch &other_sketch){
+		std::vector<uint64_t> new_wt;
+
+		for(int i = 0; i < this->wt.size(); i++){
+			if(this->wt[i] < other_sketch.wt[i]){
+				new_wt.push_back(other_sketch.wt[i]);
+			} else {
+				new_wt.push_back(this->wt[i]);
+			}
+		}
+
+		sdsl::construct_im(wt, new_wt, 8);
+	}
+
+	uint64_t get_cardinality(){
+		double Z = 0;
+
+		for(int i = 0; i < m; i++){
+			Z += static_cast<double>(1) / (1 << wt[i]);
+		}
+
+
+		double C_HLL = alpha_A * (pow(m, 2)) / Z;
+
+		if(C_HLL <= (2.5 * m)){
+			return m * log2(static_cast<double>(m) / this->get_zero_count());
+		} 
+
+		return C_HLL;
 	}
 };
 
@@ -120,6 +170,11 @@ public:
 	}
 
 	uint64_t size_in_bytes(){
-		return this->M.size() * 8;
+		return this->M.size() * sizeof(uint64_t);
+	}
+
+	template <typename t_wt>
+	CompressedHLLSketch<t_wt> get_compressed(){
+		return CompressedHLLSketch<t_wt>(M);
 	}
 };
